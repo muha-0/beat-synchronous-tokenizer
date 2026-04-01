@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<!-- saved from url=(0014)about:internet -->
+<html lang=" en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beat-Synchronous Tokenization for ECG Transformers | Spring 2026 CSCI 5541 | University of Minnesota</title>
+
+  <link rel="stylesheet" href="./website_files/bulma.min.css" />
+
+  <link rel="stylesheet" href="./website_files/styles.css">
+  <link rel="preconnect" href="https://fonts.gstatic.com/">
+  <link href="./website_files/css2" rel="stylesheet">
+  <link href="./website_files/css" rel="stylesheet">
+
+
+  <base href="." target="_blank"></head>
+
+
+<body>
+  <div>
+    <div class="wrapper">
+      <h1 style="font-family: &#39;Lato&#39;, sans-serif;">Beat-Synchronous Tokenization for ECG Transformers</h1>
+      <h4 style="font-family: &#39;Lato&#39;, sans-serif; ">Spring 2026 CSCI 5541 NLP: Class Project &mdash; University of Minnesota</h4>
+      <h4 style="font-family: &#39;Lato&#39;, sans-serif; ">Token Care</h4>
+
+      <div class="authors-wrapper">
+
+        <div class="author-container">
+          <p>
+              Ahmed Sameh
+          </p>
+        </div>
+
+        <div class="author-container">
+          <p>
+            Nolan Wilson
+          </p>
+        </div>
+
+        <div class="author-container">
+          <p>
+              Max Enderlein
+          </p>
+        </div>
+
+      </div>
+
+      <br/>
+
+      <div class="authors-wrapper">
+        <div class="publication-links">
+          <!-- Github link -->
+          <span class="link-block">
+            <a
+              href="#"
+              class="external-link button is-normal is-rounded is-dark is-outlined"
+              style="pointer-events: none; opacity: 0.5;"
+            >
+            <span>Final Report (Coming Soon)</span>
+            </a>
+          </span>
+          <span class="link-block">
+            <a
+              href="https://github.com/muha-0/beat-synchronous-tokenizer"
+              target="_blank"
+              class="external-link button is-normal is-rounded is-dark is-outlined"
+            >
+            <span>Code</span>
+            </a>
+          </span>
+          <span class="link-block">
+            <a
+              href="https://github.com/muha-0/beat-synchronous-tokenizer"
+              target="_blank"
+              class="external-link button is-normal is-rounded is-dark is-outlined"
+            >
+            <span>Model Weights</span>
+            </a>
+          </span>
+        </div>
+      </div>
+
+
+    </div>
+  </div>
+
+
+  <div class="wrapper">
+    <hr>
+
+    <h2 id="abstract">Abstract</h2>
+
+<p>
+  Transformers have achieved strong results in natural language processing by operating over sequences of discrete tokens. Applying them to physiological signals like electrocardiograms (ECGs) requires converting continuous waveforms into token sequences, making the tokenization strategy critical. Current approaches use fixed-time patches or vector-quantized autoencoders, both of which impose biologically arbitrary boundaries or introduce quantization artifacts. We propose a beat-synchronous tokenization strategy that segments ECG signals according to cardiac cycles using R-peak detection, encoding each beat into a continuous embedding via a convolutional encoder. We benchmark this approach against fixed non-overlapping patches of varying sizes on multi-label diagnostic classification (PTB-XL), with self-supervised masked modeling pretraining on MIMIC-IV-ECG. SSL pretraining is complete and downstream evaluation is in progress.
+</p>
+
+<hr>
+
+<h2 id="teaser">Teaser Figure</h2>
+
+<p>Overview of our tokenization comparison: fixed non-overlapping patches segment the ECG at arbitrary time boundaries, while beat-synchronous tokenization aligns token boundaries with cardiac cycles detected via R-peaks. Each token is encoded into a continuous embedding and processed by a Transformer.</p>
+
+<p class="sys-img"><img src="./website_files/tokenier.png" alt="Tokenization comparison: fixed patches vs beat-synchronous"></p>
+
+<h3 id="figure-explanation">Figure Explanation</h3>
+
+<p>
+  <em>Figure 1. Comparison of ECG tokenization strategies. Fixed-patch tokenization (left) segments the signal into equal-length, non-overlapping windows, which may split individual heartbeats across token boundaries. Beat-synchronous tokenization (right) uses R-peak detection to align each token with a complete cardiac cycle, preserving the morphological structure of each beat. Both token sequences are encoded into continuous embeddings and fed into a shared Transformer encoder for downstream classification.</em>
+</p>
+
+<hr>
+
+<h2 id="introduction">Introduction / Background / Motivation</h2>
+
+<p>
+<b>What did you try to do? What problem did you try to solve?</b>
+</p>
+<p>
+  We are investigating how to best convert continuous ECG (heart rhythm) signals into sequences of tokens so that a Transformer model can process them for medical diagnosis. The core question is whether aligning token boundaries with actual heartbeats &mdash; rather than chopping the signal into equal-length windows &mdash; leads to better diagnostic performance. We call this <em>beat-synchronous tokenization</em>.
+</p>
+
+<p>
+<b>How is it done today, and what are the limits of current practice?</b>
+</p>
+<p>
+  Today, ECG signals are typically split into fixed-length, non-overlapping time windows (e.g., every 100 ms) or converted into discrete codes using vector-quantized autoencoders (VQ-VAE). Fixed-time patches are simple but biologically arbitrary &mdash; a single heartbeat can be split across multiple tokens, fragmenting the diagnostically meaningful waveform morphology. VQ-VAE methods introduce quantization error by forcing continuous signals into a discrete codebook, which can degrade signal fidelity. Neither approach is designed to respect the natural structure of the cardiac cycle.
+</p>
+
+<p>
+<b>Who cares? If you are successful, what difference will it make?</b>
+</p>
+<p>
+  ECG interpretation is central to cardiac diagnostics. Automated ECG classification systems are deployed in clinical settings to detect arrhythmias, conduction disorders, and other cardiac conditions. If biologically aligned tokenization improves classification accuracy, it could lead to more reliable automated screening tools. More broadly, this work explores whether domain-informed tokenization is a general principle for applying Transformers to physiological time series.
+</p>
+
+<hr>
+
+<h2 id="approach">Approach</h2>
+
+<p>
+<b>What did you do exactly? How did you solve the problem? Why did you think it would be successful? Is anything new in your approach?</b>
+</p>
+
+<p>
+  Our approach has three stages:
+</p>
+
+<p>
+  <b>1. Tokenization.</b> We implemented a fixed CNN tokenizer as our baseline. It uses a 1D convolution (Conv1d) with kernel size and stride equal to the patch size to project each non-overlapping segment of the 12-lead ECG into a fixed-dimensional embedding (d_model = 256). We plan to evaluate multiple patch sizes (e.g., 50, 100, 250, 400, 500 samples) to understand how token granularity affects performance. The beat-synchronous tokenizer, currently under development, will segment the ECG using R-peak detection so that each token corresponds to one cardiac cycle.
+</p>
+
+<p>
+  <b>2. Self-supervised pretraining.</b> We pretrain on MIMIC-IV-ECG (~800K 12-lead ECGs) using a masked modeling objective. 20% of tokens are masked using contiguous spans and the model must reconstruct the raw patch values at masked positions. The backbone is a 4-layer Transformer encoder with 8 attention heads, GELU activations, pre-norm architecture, and learnable positional encodings. Training uses AdamW with cosine learning rate decay and 5% linear warmup.
+</p>
+
+<p>
+  <b>3. Downstream fine-tuning.</b> The pretrained encoder is fine-tuned for binary classification diagnostic classification on PTB-XL, a benchmark dataset of ~22K 12-lead ECGs with standardized diagnostic labels. We evaluate using AUROC and F1.
+</p>
+
+<p>
+<b>What problems did you anticipate? What problems did you encounter? Did the very first thing you tried work?</b>
+</p>
+
+<p>
+  We encountered issues in masked learning, as we were initially comparing the predictions of the model and the masked values in a wrong way, we were normalizing both when comparing again, so the raw signal (masked patch) was normalized again, leading to them being somewhat flat and similar.
+</p>
+<p>  
+  After our first attempt, we realized that we need more than one baseline for the fixed tokenizer. Our synchronous tokenizer would probably look at 0.8 seconds, for a fair comparison we should try the fixed tokenizer for multiple patch lentgths (e.g., 50, 100, 250, 400, 500 samples).
+</p>
+
+<hr>
+
+<h2 id="results">Results</h2>
+<p>
+<b>How did you measure success? What experiments were used? What were the results, both quantitative and qualitative?</b>
+</p>
+<p>
+  We evaluate downstream classification performance (Abnormal vs Normal) on PTB-XL using AUROC and F1 score, which are standard metrics for binary ECG classification. Results below are preliminary; additional patch sizes and the beat-synchronous tokenizer will be added as experiments complete.
+</p>
+
+<h3>Self-Supervised Pretraining (MIMIC-IV-ECG)</h3>
+<p>
+  The masked modeling pretraining on MIMIC-IV-ECG converged over 3 epochs. Final training loss: <b>0.5523</b>
+</p>
+
+<p class="sys-img"><img src="./website_files/loss.png" alt="SSL pretraining loss curve"></p>
+
+<h3>Downstream Classification (PTB-XL)</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: center"><strong>Tokenizer</strong></th>
+      <th style="text-align: center"><strong>Patch Size</strong></th>
+      <th style="text-align: center"><strong>AUROC</strong></th>
+      <th style="text-align: center"><strong>F1</strong></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: center">Fixed CNN</td>
+      <td style="text-align: center">50</td>
+      <td style="text-align: center">0.87</td>
+      <td style="text-align: center">0.81</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">Fixed CNN</td>
+      <td style="text-align: center">100</td>
+      <td style="text-align: center">&mdash;</td>
+      <td style="text-align: center">&mdash;</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">Fixed CNN</td>
+      <td style="text-align: center">250</td>
+      <td style="text-align: center">&mdash;</td>
+      <td style="text-align: center">&mdash;</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">Fixed CNN</td>
+      <td style="text-align: center">400</td>
+      <td style="text-align: center">&mdash;</td>
+      <td style="text-align: center">&mdash;</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">Fixed CNN</td>
+      <td style="text-align: center">500</td>
+      <td style="text-align: center">&mdash;</td>
+      <td style="text-align: center">&mdash;</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">Beat-Synchronous</td>
+      <td style="text-align: center">Variable</td>
+      <td style="text-align: center">&mdash;</td>
+      <td style="text-align: center">&mdash;</td>
+    </tr>
+  </tbody>
+  <caption>Table 1. Binary classification performance on PTB-XL. Dashes indicate experiments not yet completed.</caption>
+</table>
+<br>
+
+<hr>
+
+
+
+<h2 id="conclusion">Conclusion and Future Work</h2>
+<p>
+  <b>Current status:</b> We have completed the self-supervised pretraining phase on MIMIC-IV-ECG using the fixed CNN tokenizer and are currently evaluating downstream classification performance on PTB-XL.
+</p>
+<p>
+  <b>Remaining work:</b>
+</p>
+<ul>
+  <li>Implement the beat-synchronous tokenizer using R-peak detection and convolutional beat encoding.</li>
+  <li>Run the full pretraining and fine-tuning pipeline with the beat-synchronous tokenizer.</li>
+  <li>Evaluate fixed-patch baselines at multiple patch sizes (50, 100, 250, 400, 500) to understand how token granularity compares to biologically aligned segmentation.</li>
+  <li>Conduct ablation studies and compare all tokenization strategies on PTB-XL.</li>
+</ul>
+<p>
+  <b>Potential risks and limitations:</b> Our approach depends on reliable R-peak detection; noisy or arrhythmic ECGs may produce unreliable segmentation. Variable-length beat sequences require careful handling of positional encoding and batching. We plan to address these by using truncating and padding in some smart way (we are still figuring it out :D).
+</p>
+<p>
+  <b>Societal considerations:</b> This work aims to improve automated cardiac diagnostics. While better ECG classification could benefit clinical workflows, any deployed system must be validated on diverse patient populations to avoid bias. Our current evaluation is limited to the PTB-XL benchmark and does not constitute clinical validation.
+</p>
+
+
+<hr>
+
+
+  </div>
+
+
+
+</body></html>
