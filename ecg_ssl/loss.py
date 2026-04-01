@@ -1,7 +1,7 @@
 import torch
 
 
-def masked_patch_mse_loss(pred_patches, target_patches, mask, norm_target=True):
+def masked_patch_mse_loss(pred_patches, target_patches, mask, norm_target=False):
     pred_patches = pred_patches.float()
     target_patches = target_patches.float()
 
