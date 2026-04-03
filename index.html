@@ -181,6 +181,9 @@
 
 <h3>Self-Supervised Pretraining (MIMIC-IV-ECG)</h3>
 <p>
+  We realized that randomly masking tokens, isn't the best way, that was too easy for the model to learn, so we switched to contiguous span masking, which is more challenging and encourages the model to learn more robust representations. We also had some issues with the loss function, as we were normalizing both the predictions and the masked values before comparing them, which led to a very flat loss curve. After fixing this issue, we observed a much more reasonable loss curve that converged over 3 epochs.
+</p>
+<p>
   The masked modeling pretraining on MIMIC-IV-ECG converged over 3 epochs. Final training loss: <b>0.5523</b>
 </p>
 
@@ -244,7 +247,14 @@
 
 <h2 id="conclusion">Conclusion and Future Work</h2>
 <p>
-  <b>Current status:</b> We have completed the self-supervised pretraining phase on MIMIC-IV-ECG using the fixed CNN tokenizer and are currently evaluating downstream classification performance on PTB-XL.
+  <b>Current status:</b> We have completed the self-supervised pretraining phase on MIMIC-IV-ECG using the fixed CNN tokenizer and are currently evaluating downstream classification performance on PTB-XL. We evaluated various fixed patch sizes already, and we decided on the new tokenizer we are going to use. It will locate the heartbeat using R-peak detection using a library called Nerokit2, and then we will take 0.4 seconds before and after the peak.
+
+</p>
+<p>
+  <b>Mentor's feedback:</b>
+</p>
+<p>
+  We met with Professor Andy our mentor during office hours and received feedback that our direction is sound, but that we need to accelerate experimentation and begin testing the beat-synchronous tokenizer as soon as possible. We also asked how many fixed-tokenizer baselines we should evaluate. Our mentor indicated that our current baseline plan is sufficient, and that if performance degrades beyond patch length 400 (for example), then patch length 400 can be treated as the strongest fixed baseline. Professor Andy also asked if our fixed baseline is considered the standard tokenization for ECGs. While we can get a lot of citations supporting that we should make it clear that other approaches exist especially the VQ-VAE approach, but they are more complex and they are being know for being lossy.
 </p>
 <p>
   <b>Remaining work:</b>
@@ -252,8 +262,7 @@
 <ul>
   <li>Implement the beat-synchronous tokenizer using R-peak detection and convolutional beat encoding.</li>
   <li>Run the full pretraining and fine-tuning pipeline with the beat-synchronous tokenizer.</li>
-  <li>Evaluate fixed-patch baselines at multiple patch sizes (50, 100, 250, 400, 500) to understand how token granularity compares to biologically aligned segmentation.</li>
-  <li>Conduct ablation studies and compare all tokenization strategies on PTB-XL.</li>
+  <li>Evaluate the rest of the fixed patch sizes. (should be straightforward it wouldn't take much time)</li>
 </ul>
 <p>
   <b>Potential risks and limitations:</b> Our approach depends on reliable R-peak detection; noisy or arrhythmic ECGs may produce unreliable segmentation. Variable-length beat sequences require careful handling of positional encoding and batching. We plan to address these by using truncating and padding in some smart way (we are still figuring it out :D).
