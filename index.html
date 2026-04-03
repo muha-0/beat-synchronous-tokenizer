@@ -166,7 +166,7 @@
   We encountered issues in masked learning, as we were initially comparing the predictions of the model and the masked values in a wrong way, we were normalizing both when comparing again, so the raw signal (masked patch) was normalized again, leading to them being somewhat flat and similar.
 </p>
 <p>  
-  After our first attempt, we realized that we need more than one baseline for the fixed tokenizer. Our synchronous tokenizer would probably look at 0.8 seconds, for a fair comparison we should try the fixed tokenizer for multiple patch lentgths (e.g., 50, 100, 250, 400, 500 samples).
+  After our first attempt, we realized that we need more than one baseline for the fixed tokenizer. Our synchronous tokenizer would probably look at 0.8 seconds, for a fair comparison we should try the fixed tokenizer for multiple patch lengths (e.g., 50, 100, 250, 400, 500 samples).
 </p>
 
 <hr>
@@ -254,7 +254,7 @@
   <b>Mentor's feedback:</b>
 </p>
 <p>
-  We met with Professor Andy our mentor during office hours and received feedback that our direction is sound, but that we need to accelerate experimentation and begin testing the beat-synchronous tokenizer as soon as possible. We also asked how many fixed-tokenizer baselines we should evaluate. Our mentor indicated that our current baseline plan is sufficient, and that if performance degrades beyond patch length 400 (for example), then patch length 400 can be treated as the strongest fixed baseline. Professor Andy also asked if our fixed baseline is considered the standard tokenization for ECGs. While we can get a lot of citations supporting that we should make it clear that other approaches exist especially the VQ-VAE approach, but they are more complex and they are being know for being lossy (quantization errors).
+  We met with Professor , our mentor, during office hours and received feedback that our direction is sound, but that we need to accelerate experimentation and begin testing the beat-synchronous tokenizer as soon as possible. We also asked how many fixed-tokenizer baselines we should evaluate. Our mentor indicated that our current baseline plan is sufficient, and that if performance degrades beyond patch length 400 (for example), then patch length 400 can be treated as the strongest fixed baseline. Professor Andy also asked if our fixed baseline is considered the standard tokenization for ECGs. While we can get a lot of citations supporting that we should make it clear that other approaches exist especially the VQ-VAE approach, but they are more complex and they are known for being lossy (quantization errors).
 </p>
 <p>
   <b>Remaining work:</b>
@@ -265,7 +265,7 @@
   <li>Evaluate the rest of the fixed patch sizes. (should be straightforward it wouldn't take much time)</li>
 </ul>
 <p>
-  <b>Potential risks and limitations:</b> Our approach depends on reliable R-peak detection; noisy or arrhythmic ECGs may produce unreliable segmentation. Variable-length beat sequences require careful handling of positional encoding and batching. We plan to address these by using truncating and padding in some smart way (we are still figuring it out :D).
+  <b>Potential risks and limitations:</b> Our approach depends on reliable R-peak detection; noisy or arrhythmic ECGs may produce unreliable segmentation. Variable-length beat sequences require careful handling of positional encoding and batching. We plan to address this through padding and truncation strategies that preserve as much temporal structure as possible.
 </p>
 <p>
   <b>Societal considerations:</b> This work aims to improve automated cardiac diagnostics. While better ECG classification could benefit clinical workflows, any deployed system must be validated on diverse patient populations to avoid bias. Our current evaluation is limited to the PTB-XL benchmark and does not constitute clinical validation.
