@@ -32,6 +32,7 @@ NUM_HEADS = 8
 NUM_LAYERS = 4
 MLP_RATIO = 4
 DROPOUT = 0.1
+BEAT_LENGTH = 256
 
 # -------------------------
 # Masking
