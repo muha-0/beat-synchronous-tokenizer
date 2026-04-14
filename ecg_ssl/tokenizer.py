@@ -9,6 +9,12 @@ Tokenizer 1: ResampleCNNTokenizer
     - Slice all 12 leads between consecutive R-peaks
     - Resample each beat to a fixed number of samples
     - Encode each beat with a 1D CNN to produce a token embedding
+
+Tokenizer 2: AdaptivePoolingCNNTokenizer
+    - Detect R-peaks on Lead II
+    - Slice all 12 leads between consecutive R-peaks
+    - NO resampling — feed raw variable-length beats into CNN
+    - Use AdaptiveAvgPool1d to collapse to fixed-size output
 """
 
 import numpy as np
@@ -83,7 +89,8 @@ def resample_beat(beat, target_length=256):
 
 def extract_beat_tokens(signal_12lead_np, target_length=256, sampling_rate=500):
     """
-    Full pipeline: take a raw 12-lead ECG and return resampled beat segments.
+    Full pipeline for Tokenizer 1: take a raw 12-lead ECG and return
+    resampled beat segments.
 
     Args:
         signal_12lead_np: numpy array of shape (12, 5000)
@@ -117,6 +124,51 @@ def extract_beat_tokens(signal_12lead_np, target_length=256, sampling_rate=500):
     # Stack into (num_beats, 12, target_length)
     beat_array = np.stack(resampled_beats, axis=0)
     return beat_array
+
+
+def extract_beat_tokens_raw(signal_12lead_np, sampling_rate=500):
+    """
+    Full pipeline for Tokenizer 2: take a raw 12-lead ECG and return
+    variable-length beat segments padded to the max beat length.
+
+    No resampling — beats are kept at their original length and
+    zero-padded to the length of the longest beat in this recording.
+
+    Args:
+        signal_12lead_np: numpy array of shape (12, 5000)
+        sampling_rate: sampling rate in Hz
+
+    Returns:
+        beat_array: numpy array of shape (num_beats, 12, max_beat_length)
+                    where shorter beats are zero-padded
+        beat_lengths: numpy array of shape (num_beats,) with the actual
+                      length of each beat before padding
+        Returns None, None if R-peak detection fails
+    """
+    # Step 1: Detect R-peaks on Lead II (index 1)
+    lead_ii = signal_12lead_np[1]
+    r_peaks = detect_r_peaks(lead_ii, sampling_rate=sampling_rate)
+
+    if len(r_peaks) < 2:
+        return None, None
+
+    # Step 2: Segment between R-peaks
+    beats = segment_beats(signal_12lead_np, r_peaks)
+
+    if len(beats) == 0:
+        return None, None
+
+    # Step 3: Pad each beat to the length of the longest beat
+    beat_lengths = np.array([beat.shape[1] for beat in beats])
+    max_beat_len = beat_lengths.max()
+    num_leads = signal_12lead_np.shape[0]
+
+    beat_array = np.zeros((len(beats), num_leads, max_beat_len), dtype=np.float32)
+    for i, beat in enumerate(beats):
+        beat_len = beat.shape[1]
+        beat_array[i, :, :beat_len] = beat
+
+    return beat_array, beat_lengths
 
 
 # ---------------------------------------------------------------
@@ -174,6 +226,72 @@ class ResampleCNNTokenizer(nn.Module):
         x = beat_tokens.view(B * N, C, T)
 
         # Run through CNN encoder
+        x = self.encoder(x)    # (B*N, d_model, reduced_length)
+        x = self.pool(x)       # (B*N, d_model, 1)
+        x = x.squeeze(-1)      # (B*N, d_model)
+
+        # Reshape back to (B, N, d_model)
+        embeddings = x.view(B, N, self.d_model)
+        return embeddings
+
+
+# ---------------------------------------------------------------
+# Tokenizer 2: Adaptive Pooling CNN (no resampling)
+# ---------------------------------------------------------------
+
+class AdaptivePoolingCNNTokenizer(nn.Module):
+    """
+    Beat-synchronous tokenizer that:
+    1. Detects R-peaks and segments ECG into individual beats
+    2. Does NOT resample — beats stay at their original variable length
+    3. Encodes each beat with Conv1d layers
+    4. Uses AdaptiveAvgPool1d(1) to produce a fixed-size embedding
+       regardless of input length
+
+    This avoids any signal distortion from resampling. The CNN sees the
+    original waveform at its native temporal resolution.
+
+    Input beats are zero-padded to the max beat length in the batch.
+    """
+
+    def __init__(self, in_channels=12, d_model=256):
+        super().__init__()
+        self.d_model = d_model
+
+        # CNN encoder: same architecture as Tokenizer 1
+        # Conv1d works on any input length — the filter just slides
+        # across however many samples exist
+        self.encoder = nn.Sequential(
+            nn.Conv1d(in_channels, 64, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+
+            nn.Conv1d(64, 128, kernel_size=5, stride=2, padding=2),
+            nn.GELU(),
+
+            nn.Conv1d(128, d_model, kernel_size=5, stride=2, padding=2),
+            nn.GELU(),
+        )
+
+        # Adaptive pooling collapses any length to 1
+        self.pool = nn.AdaptiveAvgPool1d(1)
+
+    def forward(self, beat_tokens):
+        """
+        Args:
+            beat_tokens: tensor of shape (B, N, 12, T_padded)
+                         Beats are zero-padded to the max beat length.
+
+        Returns:
+            embeddings: tensor of shape (B, N, d_model)
+        """
+        B, N, C, T = beat_tokens.shape
+
+        # Reshape to process all beats at once: (B*N, 12, T_padded)
+        x = beat_tokens.view(B * N, C, T)
+
+        # Run through CNN encoder
+        # Conv1d handles any input length — padding zeros will produce
+        # near-zero activations that get diluted by the adaptive pool
         x = self.encoder(x)    # (B*N, d_model, reduced_length)
         x = self.pool(x)       # (B*N, d_model, 1)
         x = x.squeeze(-1)      # (B*N, d_model)
