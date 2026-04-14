@@ -3,4 +3,11 @@ data/
 __pycache__/
 *.pyc
 *.pt
+*.png
+checkpoints_beat_sync_resample/
+checkpoints_beat_sync_adaptive/
+checkpoints_beat_sync_hr/
+checkpoints_fixed_ssl_rawpatch/
 .DS_Store
+tokenizer_test_output.png
+tokenizer2_test_output.png
