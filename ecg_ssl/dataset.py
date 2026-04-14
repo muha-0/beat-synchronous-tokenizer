@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import wfdb
 
 from . import config
-from .tokenizer import extract_beat_tokens, extract_beat_tokens_raw
+from .tokenizer import extract_beat_tokens, extract_beat_tokens_with_rr, extract_beat_tokens_raw
 
 
 # ---------------------------------------------------------------
@@ -206,10 +206,6 @@ class RawBeatECGDataset(_ECGSanitizeMixin, Dataset):
     """
     Dataset for Tokenizer 2 (AdaptivePoolingCNN).
     Returns raw variable-length beat segments with NO resampling.
-
-    Each beat is padded to the max beat length within that single ECG.
-    Cross-ECG padding (different number of beats, different max beat lengths)
-    is handled by the collate function.
     """
 
     def __init__(self, record_paths, clip_value=5.0,
@@ -238,10 +234,60 @@ class RawBeatECGDataset(_ECGSanitizeMixin, Dataset):
                         beat_lengths is not None and
                         beat_array.shape[0] >= self.min_beats):
                     return {
-                        "beats": torch.from_numpy(beat_array),           # (N, 12, max_beat_len)
-                        "beat_lengths": torch.from_numpy(beat_lengths),  # (N,)
+                        "beats": torch.from_numpy(beat_array),
+                        "beat_lengths": torch.from_numpy(beat_lengths),
                         "num_beats": beat_array.shape[0],
                         "max_beat_len": beat_array.shape[2],
+                        "record_path": rp,
+                    }
+
+            idx = np.random.randint(0, len(self.record_paths))
+
+        raise RuntimeError(f"Failed to load a valid ECG after {self.max_retries} retries.")
+
+
+# ---------------------------------------------------------------
+# Beat-synchronous dataset for Tokenizer 3 (resampled beats + R-R intervals)
+# ---------------------------------------------------------------
+
+class BeatHRECGDataset(_ECGSanitizeMixin, Dataset):
+    """
+    Dataset for Tokenizer 3 (ResampleCNNWithHR).
+    Returns resampled beat segments PLUS R-R interval durations.
+    Same fixed-length beats as Tokenizer 1, with heart rate info added.
+    """
+
+    def __init__(self, record_paths, beat_length=256, clip_value=5.0,
+                 sampling_rate=500, min_beats=3, max_retries=50):
+        self.record_paths = record_paths
+        self.beat_length = beat_length
+        self.clip_value = clip_value
+        self.sampling_rate = sampling_rate
+        self.min_beats = min_beats
+        self.max_retries = max_retries
+
+    def __len__(self):
+        return len(self.record_paths)
+
+    def __getitem__(self, idx):
+        for _ in range(self.max_retries):
+            rp = self.record_paths[idx]
+            x = self._load_and_clean(rp, self.clip_value)
+
+            if x is not None:
+                beat_array, rr_intervals = extract_beat_tokens_with_rr(
+                    x,
+                    target_length=self.beat_length,
+                    sampling_rate=self.sampling_rate,
+                )
+
+                if (beat_array is not None and
+                        rr_intervals is not None and
+                        beat_array.shape[0] >= self.min_beats):
+                    return {
+                        "beats": torch.from_numpy(beat_array),           # (N, 12, beat_length)
+                        "rr_intervals": torch.from_numpy(rr_intervals),  # (N,)
+                        "num_beats": beat_array.shape[0],
                         "record_path": rp,
                     }
 
@@ -281,49 +327,67 @@ def beat_collate_fn(batch):
     }
 
 
-def raw_beat_collate_fn(batch):
+def beat_hr_collate_fn(batch):
     """
-    Collate for Tokenizer 2 (RawBeatECGDataset).
-    Pads on TWO dimensions:
-      1. Number of beats (different ECGs have different numbers of heartbeats)
-      2. Beat length (different beats have different lengths, even within one ECG)
-
-    Returns:
-        beats: (B, max_N, 12, global_max_T) — double-padded beat tensors
-        padding_mask: (B, max_N) — True where beat position is padding
-        num_beats: (B,) — actual number of beats per ECG
-        beat_lengths: (B, max_N) — actual sample length of each beat (0 for padding beats)
-        global_max_beat_len: int — the max beat length across the entire batch
+    Collate for Tokenizer 3 (BeatHRECGDataset).
+    Same as beat_collate_fn but also pads R-R intervals.
     """
     num_beats = [item["num_beats"] for item in batch]
     max_beats = max(num_beats)
 
-    # Find the global max beat length across ALL beats in ALL ECGs in this batch
+    B = len(batch)
+    C = batch[0]["beats"].shape[1]       # 12 leads
+    T = batch[0]["beats"].shape[2]       # beat_length (fixed = 256)
+
+    padded_beats = torch.zeros(B, max_beats, C, T)
+    padded_rr = torch.zeros(B, max_beats)               # R-R intervals, 0 for padding
+    padding_mask = torch.ones(B, max_beats, dtype=torch.bool)
+
+    for i, item in enumerate(batch):
+        n = item["num_beats"]
+        padded_beats[i, :n] = item["beats"]
+        padded_rr[i, :n] = item["rr_intervals"]
+        padding_mask[i, :n] = False
+
+    return {
+        "beats": padded_beats,               # (B, max_N, 12, beat_length)
+        "rr_intervals": padded_rr,           # (B, max_N)
+        "padding_mask": padding_mask,         # (B, max_N)
+        "num_beats": torch.tensor(num_beats), # (B,)
+    }
+
+
+def raw_beat_collate_fn(batch):
+    """
+    Collate for Tokenizer 2 (RawBeatECGDataset).
+    Pads on TWO dimensions: number of beats AND beat length.
+    """
+    num_beats = [item["num_beats"] for item in batch]
+    max_beats = max(num_beats)
+
     global_max_beat_len = max(item["max_beat_len"] for item in batch)
 
     B = len(batch)
-    C = batch[0]["beats"].shape[1]  # 12 leads
+    C = batch[0]["beats"].shape[1]
 
-    # Double-padded tensor: pad both beat count and beat length
     padded_beats = torch.zeros(B, max_beats, C, global_max_beat_len)
-    padding_mask = torch.ones(B, max_beats, dtype=torch.bool)  # True = padding
+    padding_mask = torch.ones(B, max_beats, dtype=torch.bool)
     all_beat_lengths = torch.zeros(B, max_beats, dtype=torch.long)
 
     for i, item in enumerate(batch):
         n = item["num_beats"]
-        t = item["beats"].shape[2]  # this ECG's max beat length
+        t = item["beats"].shape[2]
 
-        # Copy beats into the padded tensor (may need additional length padding)
         padded_beats[i, :n, :, :t] = item["beats"]
         padding_mask[i, :n] = False
         all_beat_lengths[i, :n] = item["beat_lengths"]
 
     return {
-        "beats": padded_beats,                          # (B, max_N, 12, global_max_T)
-        "padding_mask": padding_mask,                   # (B, max_N)
-        "num_beats": torch.tensor(num_beats),           # (B,)
-        "beat_lengths": all_beat_lengths,                # (B, max_N)
-        "global_max_beat_len": global_max_beat_len,     # int
+        "beats": padded_beats,
+        "padding_mask": padding_mask,
+        "num_beats": torch.tensor(num_beats),
+        "beat_lengths": all_beat_lengths,
+        "global_max_beat_len": global_max_beat_len,
     }
 
 
@@ -384,6 +448,39 @@ def build_beat_dataloaders(record_paths):
         persistent_workers=config.PERSISTENT_WORKERS,
         prefetch_factor=config.PREFETCH_FACTOR,
         collate_fn=beat_collate_fn,
+    )
+
+    train_loader = DataLoader(train_dataset, shuffle=True, drop_last=True, **loader_kwargs)
+    val_loader = DataLoader(val_dataset, shuffle=False, drop_last=False, **loader_kwargs)
+
+    return train_loader, val_loader
+
+
+def build_beat_hr_dataloaders(record_paths):
+    """Tokenizer 3 dataloaders (resampled beats + R-R intervals)."""
+    dataset = BeatHRECGDataset(
+        record_paths,
+        beat_length=config.BEAT_LENGTH,
+        max_retries=config.MAX_RETRIES,
+    )
+
+    n_total = len(dataset)
+    n_train = int(config.TRAIN_FRAC * n_total)
+    n_val = n_total - n_train
+
+    train_dataset, val_dataset = random_split(
+        dataset,
+        [n_train, n_val],
+        generator=torch.Generator().manual_seed(config.SEED),
+    )
+
+    loader_kwargs = dict(
+        batch_size=config.BATCH_SIZE,
+        num_workers=config.NUM_WORKERS,
+        pin_memory=config.PIN_MEMORY,
+        persistent_workers=config.PERSISTENT_WORKERS,
+        prefetch_factor=config.PREFETCH_FACTOR,
+        collate_fn=beat_hr_collate_fn,
     )
 
     train_loader = DataLoader(train_dataset, shuffle=True, drop_last=True, **loader_kwargs)
