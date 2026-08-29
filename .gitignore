@@ -1,0 +1,26 @@
+# checkpoints / model weights (distributed via GitHub Releases)
+checkpoints_*/
+CNN_tokenizer_1min/
+VQ_tokenizer_1min/
+artifacts/
+*.pt
+*.pth
+
+# data caches
+clean_record_paths.txt
+*.npy
+*.npz
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# jupyter
+.ipynb_checkpoints/
+
+# misc
+.vscode/
+.idea/
