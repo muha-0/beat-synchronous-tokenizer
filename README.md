@@ -140,14 +140,18 @@ Validation/test window manifests are regenerated deterministically (fixed seeds)
 ## Citation
 
 ```bibtex
-@inproceedings{sameh2026beatsync,
-  title     = {Beat-Synchronous Tokenization for {ECG} Transformers},
-  author    = {Sameh, Ahmed and Wilson, Nolan and Enderlein, Max and Varatharajah, Yogatheesan},
-  booktitle = {IEEE International Workshop on Machine Learning for Signal Processing (MLSP)},
-  year      = {2026},
-  organization = {IEEE}
+@misc{sameh2026beat,
+  title={Beat-Synchronous Tokenization for ECG Transformers},
+  author={Sameh, Ahmed and Wilson, Nolan and Enderlein, Max and Varatharajah, Yogatheesan},
+  year={2026},
+  eprint={2608.30367},
+  archivePrefix={arXiv},
+  primaryClass={cs.LG},
+  url={https://arxiv.org/abs/2608.30367}
 }
 ```
+
+The citation will be updated to the final IEEE MLSP proceedings citation once the published version is available.
 
 ## License
 
